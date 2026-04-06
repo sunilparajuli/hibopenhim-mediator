@@ -1,0 +1,58 @@
+from rest_framework import serializers
+
+class NIDInputSerializer(serializers.Serializer):
+    nin_loc = serializers.CharField()
+    first_name = serializers.CharField(required=False, allow_blank=True)
+    last_name = serializers.CharField(required=False, allow_blank=True)
+    first_name_loc = serializers.CharField(required=False, allow_blank=True)
+    last_name_loc = serializers.CharField(required=False, allow_blank=True)
+    dob = serializers.CharField(required=False, allow_blank=True)
+    dob_loc = serializers.CharField(required=False, allow_blank=True)
+    gender = serializers.CharField(required=False, allow_blank=True)
+    perm_state = serializers.CharField(required=False, allow_blank=True)
+    perm_district = serializers.CharField(required=False, allow_blank=True)
+    perm_rur_mun = serializers.CharField(required=False, allow_blank=True)
+    perm_ward = serializers.CharField(required=False, allow_blank=True)
+    perm_village_tol = serializers.CharField(required=False, allow_blank=True)
+    cc_issuing_district = serializers.CharField(required=False, allow_blank=True)
+    cc_issuing_date = serializers.CharField(required=False, allow_blank=True)
+    f_first_name = serializers.CharField(required=False, allow_blank=True)
+    f_last_name = serializers.CharField(required=False, allow_blank=True)
+    m_first_name = serializers.CharField(required=False, allow_blank=True)
+    m_last_name = serializers.CharField(required=False, allow_blank=True)
+    gf_first_name = serializers.CharField(required=False, allow_blank=True)
+    gf_last_name = serializers.CharField(required=False, allow_blank=True)
+    perm_state_loc = serializers.CharField(required=False, allow_blank=True)
+    perm_district_loc = serializers.CharField(required=False, allow_blank=True)
+    perm_rur_mun_loc = serializers.CharField(required=False, allow_blank=True)
+    perm_ward_loc = serializers.CharField(required=False, allow_blank=True)
+    perm_village_tol_loc = serializers.CharField(required=False, allow_blank=True)
+    cc_number_loc = serializers.CharField(required=False, allow_blank=True)
+    cc_issuing_district_loc = serializers.CharField(required=False, allow_blank=True)
+    cc_issuing_date_loc = serializers.CharField(required=False, allow_blank=True)
+    f_first_name_loc = serializers.CharField(required=False, allow_blank=True)
+    f_last_name_loc = serializers.CharField(required=False, allow_blank=True)
+    m_first_name_loc = serializers.CharField(required=False, allow_blank=True)
+    m_last_name_loc = serializers.CharField(required=False, allow_blank=True)
+    gf_first_name_loc = serializers.CharField(required=False, allow_blank=True)
+    gf_last_name_loc = serializers.CharField(required=False, allow_blank=True)
+    portrait_image = serializers.CharField(required=False, allow_blank=True)
+
+class NIDWrapperSerializer(serializers.Serializer):
+    nid = NIDInputSerializer()
+
+class NIDFetchRequestSerializer(serializers.Serializer):
+    nin = serializers.CharField(help_text="National Identifier Number")
+
+class NIDMappingResponseSerializer(serializers.Serializer):
+    # This is a simplified version of the complex response, mainly for Swagger
+    at_type = serializers.CharField(source='@type')
+    group_identifier = serializers.ListField()
+    group_type = serializers.CharField()
+    place = serializers.DictField()
+    group_head_info = serializers.DictField()
+    group_size = serializers.IntegerField()
+    member_list = serializers.ListField()
+    registration_date = serializers.DateTimeField()
+    last_updated = serializers.DateTimeField()
+    additional_attributes = serializers.ListField()
