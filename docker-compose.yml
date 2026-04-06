@@ -1,14 +1,12 @@
 services:
   # --- Nginx (entry point) ---
   nginx:
-    image: nginx:alpine
+    build: ./nginx
     container_name: nid-nginx
     ports:
       - "80:80"         # API + Console
-      - "8080:8443"     # OpenHIM Core API (SSL passthrough)
+      - "8080:8443"     # OpenHIM Core API (SSL proxied)
     volumes:
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./nginx/generate-certs.sh:/docker-entrypoint.d/generate-certs.sh:ro
       - nginx_certs:/etc/nginx/certs
     entrypoint: ["/bin/sh", "/docker-entrypoint.d/generate-certs.sh"]
     depends_on:
