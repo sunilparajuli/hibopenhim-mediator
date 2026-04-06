@@ -1,4 +1,23 @@
 services:
+  # --- Nginx (entry point) ---
+  nginx:
+    image: nginx:alpine
+    container_name: nid-nginx
+    ports:
+      - "80:80"         # API + Console
+      - "8080:8443"     # OpenHIM Core API (SSL passthrough)
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/generate-certs.sh:/docker-entrypoint.d/generate-certs.sh:ro
+      - nginx_certs:/etc/nginx/certs
+    entrypoint: ["/bin/sh", "/docker-entrypoint.d/generate-certs.sh"]
+    depends_on:
+      - openhim-core
+      - openhim-console
+      - web
+    restart: always
+
+  # --- Django Backend ---
   db:
     image: postgres:15-alpine
     volumes:
@@ -20,7 +39,7 @@ services:
     volumes:
       - .:/app
     ports:
-      - "8000:8000"
+      - "8000:8000"     # Direct access for dev/admin (remove in production)
     environment:
       - DATABASE_URL=postgres://postgres:postgres@db:5432/nid_map_db
       - SECRET_KEY=django-insecure-lb@s%br=g7l^h$&n0_g!h8-$$r_$w&of(_a_*+gz&s)q*ex=@_
@@ -37,7 +56,7 @@ services:
       openhim-core:
         condition: service_started
 
-  # OpenHIM Stack
+  # --- OpenHIM Stack ---
   mongodb:
     image: mongo:4.2
     volumes:
@@ -56,10 +75,11 @@ services:
 
   openhim-core:
     image: jembi/openhim-core:latest
-    ports:
-      - "5000:5000"
-      - "5001:5001"
-      - "8080:8080"
+    # Ports NOT exposed to host — only reachable via nginx and internal network
+    expose:
+      - "5000"
+      - "5001"
+      - "8080"
     environment:
       - mongo_url=mongodb://mongodb:27017/openhim?connectTimeoutMS=60000&serverSelectionTimeoutMS=60000
       - OPENHIM_PASSWORD=openhim-password
@@ -71,8 +91,9 @@ services:
 
   openhim-console:
     image: jembi/openhim-console:latest
-    ports:
-      - "9000:80"
+    # Not exposed to host — served via nginx on port 80
+    expose:
+      - "80"
     environment:
       - OPENHIM_CORE_HOST=localhost
       - OPENHIM_CORE_PORT=8080
@@ -83,3 +104,4 @@ services:
 volumes:
   postgres_data:
   mongodb_data:
+  nginx_certs:

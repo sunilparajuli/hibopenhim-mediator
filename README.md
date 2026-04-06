@@ -1,28 +1,35 @@
 # NID Mapping Mediator Service
 
-A Django-based mediator service integrated with OpenHIM that maps Nepal National ID (NID) data. All API traffic flows through OpenHIM (port 5001), and Django handles its own authentication via JWT.
+A Django-based mediator service integrated with OpenHIM that maps Nepal National ID (NID) data. Nginx sits in front as a reverse proxy on port 80, routing API traffic through OpenHIM to Django.
 
 ## Architecture
 
 ```
-Client --> OpenHIM (5001) --> Django (8000)
-             public             JWT auth
+                         +--> OpenHIM Console (UI)
+                         |
+Client --> Nginx (80) ---+--> OpenHIM (5001) --> Django (8000)
+                         |      public             JWT auth
+Browser --> Nginx (8080) +--> OpenHIM Core API (8080/HTTPS)
 ```
 
+- **Nginx** is the single entry point — proxies port 80 for API + Console, port 8080 for OpenHIM Core API
 - **OpenHIM** acts as a transparent proxy (public channel, no auth at this layer)
 - **Django** protects its own routes using JWT (`IsAuthenticated`)
 - On startup, Django auto-registers the mediator and channel config with OpenHIM
 
-## Services
+## Exposed Ports
 
-| Service           | Port   | Description                        |
-|:------------------|:-------|:-----------------------------------|
-| OpenHIM Console   | `9000` | Web UI for OpenHIM management      |
-| OpenHIM API       | `8080` | OpenHIM Management API (HTTPS)     |
-| OpenHIM Channel   | `5001` | Public HTTP channel (main entry)   |
-| Django            | `8000` | Backend API (also accessible directly) |
-| PostgreSQL        | `5432` | Django database (internal only)    |
-| MongoDB           | `27017`| OpenHIM database (internal only)   |
+| Port   | Service via Nginx            | Description                              |
+|:-------|:-----------------------------|:-----------------------------------------|
+| `80`   | `/api/*` -> OpenHIM -> Django | Main API (login, mapping, swagger)       |
+| `80`   | `/*` -> OpenHIM Console       | OpenHIM management UI                   |
+| `8080` | OpenHIM Core API (HTTPS)     | Needed for console login (SSL proxied)   |
+| `8000` | Django direct (dev only)     | Bypass OpenHIM — remove in production    |
+
+Internal services (not exposed to host):
+- OpenHIM Core: `5000`, `5001`, `8080`
+- PostgreSQL: `5432`
+- MongoDB: `27017`
 
 ## Quick Start
 
@@ -33,7 +40,6 @@ cd hibopenhim-mediator
 docker compose up --build -d
 
 # Wait ~15 seconds for OpenHIM registration to complete
-# Check logs to confirm
 docker logs nid-map-service --tail 10
 ```
 
@@ -50,24 +56,30 @@ Successfully updated channel: NID Mapping Channel
 | Django Admin/API   | `admin`             | `admin-password`   |
 | OpenHIM Console    | `root@openhim.org`  | `password`         |
 
-## OpenHIM Console Setup
+## First-Time OpenHIM Console Setup
 
-1. Open `http://localhost:9000`
-2. Login with `root@openhim.org` / `password`
-3. First login may ask you to accept the self-signed certificate at `https://localhost:8080` -- accept it
-4. The channel **NID Mapping Channel** is auto-created with:
+The OpenHIM Core API uses a self-signed SSL certificate. On first use:
+
+1. Open **`https://localhost:8080`** in your browser
+2. You will see a security warning — click **Advanced** > **Proceed / Accept Risk**
+3. You should see a JSON response or blank page — that's fine, the cert is now trusted by your browser
+4. Now open **`http://localhost`** (the console via Nginx)
+5. Login with `root@openhim.org` / `password`
+6. The channel **NID Mapping Channel** should already be auto-created with:
    - URL Pattern: `^/api/.*`
    - Auth Type: `public`
    - Routes all `/api/` traffic to Django container on port 8000
 
-## API Endpoints (via OpenHIM)
+> **Note:** Step 1-3 is a one-time browser action. Once accepted, the console works normally.
 
-All requests go through `http://localhost:5001`.
+## API Endpoints
+
+All requests go through **`http://localhost`** (port 80, via Nginx).
 
 ### 1. Login (Get JWT Token)
 
 ```bash
-curl -X POST http://localhost:5001/api/token/ \
+curl -X POST http://localhost/api/token/ \
   -H "Content-Type: application/json" \
   -d '{"username": "admin", "password": "admin-password"}'
 ```
@@ -83,7 +95,7 @@ Response:
 ### 2. Refresh Token
 
 ```bash
-curl -X POST http://localhost:5001/api/token/refresh/ \
+curl -X POST http://localhost/api/token/refresh/ \
   -H "Content-Type: application/json" \
   -d '{"refresh": "<refresh_token>"}'
 ```
@@ -93,7 +105,7 @@ curl -X POST http://localhost:5001/api/token/refresh/ \
 Looks up NID data by `nin_loc` from the request body.
 
 ```bash
-curl -X POST http://localhost:5001/api/mapping/map/ \
+curl -X POST http://localhost/api/mapping/map/ \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <access_token>" \
   -d '{
@@ -108,19 +120,19 @@ curl -X POST http://localhost:5001/api/mapping/map/ \
 Fetches NID data by `nin` query parameter.
 
 ```bash
-curl -X GET "http://localhost:5001/api/mapping/fetch/?nin=८९८-४१४-३७५-३" \
+curl -X GET "http://localhost/api/mapping/fetch/?nin=८९८-४१४-३७५-३" \
   -H "Authorization: Bearer <access_token>"
 ```
 
 ### 5. Swagger Docs
 
-- Swagger UI: `http://localhost:5001/api/docs/`
-- ReDoc: `http://localhost:5001/api/redoc/`
-- OpenAPI Schema: `http://localhost:5001/api/schema/`
+- Swagger UI: `http://localhost/api/docs/`
+- ReDoc: `http://localhost/api/redoc/`
+- OpenAPI Schema: `http://localhost/api/schema/`
 
-### 6. Django Admin
+### 6. Django Admin (direct, dev only)
 
-`http://localhost:8000/admin/` (direct, not through OpenHIM)
+`http://localhost:8000/admin/`
 
 ## Available Test NINs (Dummy Data)
 
@@ -178,11 +190,14 @@ Any NIN not in this list returns a `404` error.
 
 ```
 .
-├── docker-compose.yml              # All services (Django, OpenHIM, Postgres, MongoDB)
+├── docker-compose.yml              # All services (Nginx, Django, OpenHIM, Postgres, MongoDB)
 ├── Dockerfile                      # Django app image
 ├── entrypoint.sh                   # Runs migrations + runserver
 ├── requirements.txt                # Python dependencies
 ├── manage.py
+├── nginx/
+│   ├── default.conf                # Nginx config (proxy rules)
+│   └── generate-certs.sh           # Auto-generates self-signed SSL certs
 ├── nid_map_service_project/
 │   ├── settings.py                 # Django settings (JWT, DB, OpenHIM config)
 │   ├── urls.py                     # Root URLs (token, mapping, swagger)
@@ -222,9 +237,17 @@ Set in `docker-compose.yml` under the `web` service:
 
 - Code is volume-mounted (`.:/app`), so edits are picked up automatically by `runserver`
 - No need to rebuild or restart for code changes during development
-- SPDCI mapping (`services/mapper.py`) is commented out -- endpoints return raw NID key-value data for now
+- SPDCI mapping (`services/mapper.py`) is commented out — endpoints return raw NID key-value data for now
 - JWT access tokens expire in 1 day (configurable in `settings.py` under `SIMPLE_JWT`)
 - To create additional Django users: `docker exec -it nid-map-service python manage.py createsuperuser`
+
+## Production Checklist
+
+- [ ] Remove `ports: "8000:8000"` from `web` service (no direct Django access)
+- [ ] Replace self-signed certs with Let's Encrypt (use certbot + nginx volume mount)
+- [ ] Set `DEBUG=False` and use a proper `SECRET_KEY`
+- [ ] Switch from `runserver` to `gunicorn` in `entrypoint.sh`
+- [ ] Set strong passwords for Django admin, OpenHIM, and PostgreSQL
 
 ## Data Persistence
 
