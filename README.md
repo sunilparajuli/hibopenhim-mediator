@@ -195,9 +195,14 @@ Any NIN not in this list returns a `404` error.
 ├── entrypoint.sh                   # Runs migrations + runserver
 ├── requirements.txt                # Python dependencies
 ├── manage.py
+├── docker-compose.prod.yml         # Production overrides (SSL, certbot, no debug)
 ├── nginx/
-│   ├── default.conf                # Nginx config (proxy rules)
-│   └── generate-certs.sh           # Auto-generates self-signed SSL certs
+│   ├── Dockerfile                  # Custom nginx image with openssl
+│   ├── default.conf                # Dev nginx config (localhost)
+│   ├── production.conf             # Production nginx config (domain + Let's Encrypt)
+│   ├── console.production.json     # Console config for production (uses /openhim-api/ path)
+│   ├── console.config.js           # Console config for dev
+│   └── generate-certs.sh           # Auto-generates self-signed SSL certs (dev only)
 ├── nid_map_service_project/
 │   ├── settings.py                 # Django settings (JWT, DB, OpenHIM config)
 │   ├── urls.py                     # Root URLs (token, mapping, swagger)
@@ -241,13 +246,44 @@ Set in `docker-compose.yml` under the `web` service:
 - JWT access tokens expire in 1 day (configurable in `settings.py` under `SIMPLE_JWT`)
 - To create additional Django users: `docker exec -it nid-map-service python manage.py createsuperuser`
 
-## Production Checklist
+## Production Deployment (with domain)
 
-- [ ] Remove `ports: "8000:8000"` from `web` service (no direct Django access)
-- [ ] Replace self-signed certs with Let's Encrypt (use certbot + nginx volume mount)
-- [ ] Set `DEBUG=False` and use a proper `SECRET_KEY`
-- [ ] Switch from `runserver` to `gunicorn` in `entrypoint.sh`
-- [ ] Set strong passwords for Django admin, OpenHIM, and PostgreSQL
+When deploying with a real domain, Nginx handles SSL via Let's Encrypt and proxies the OpenHIM Core API through a path — so no more self-signed cert issues.
+
+**Architecture with domain:**
+```
+https://your-domain.com/api/*          → OpenHIM (5001) → Django
+https://your-domain.com/openhim-api/*  → OpenHIM Core API (8080)
+https://your-domain.com/*              → OpenHIM Console UI
+```
+
+**Setup steps:**
+
+```bash
+# 1. Replace YOUR_DOMAIN in these files with your actual domain:
+sed -i 's/YOUR_DOMAIN/your-domain.com/g' nginx/production.conf
+sed -i 's/YOUR_DOMAIN/your-domain.com/g' nginx/console.production.json
+sed -i 's/your-email@example.com/you@example.com/g' docker-compose.prod.yml
+sed -i 's/YOUR_DOMAIN/your-domain.com/g' docker-compose.prod.yml
+
+# 2. First run — get SSL cert (nginx must be running on port 80 for the challenge):
+#    Temporarily start with a basic HTTP config, then run certbot:
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm certbot
+
+# 3. Restart nginx to pick up the new cert:
+docker compose -f docker-compose.yml -f docker-compose.prod.yml restart nginx
+```
+
+**Key files for production:**
+- `nginx/production.conf` — SSL-terminated nginx config with Let's Encrypt
+- `nginx/console.production.json` — tells OpenHIM Console to use `/openhim-api/` path instead of port 8080
+- `docker-compose.prod.yml` — overrides: removes exposed ports, adds certbot, disables debug
+
+**Auto-renew certs (add to crontab):**
+```bash
+0 3 * * * cd /path/to/project && docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm certbot renew && docker compose -f docker-compose.yml -f docker-compose.prod.yml restart nginx
+```
 
 ## Data Persistence
 

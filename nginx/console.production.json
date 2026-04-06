@@ -1,0 +1,8 @@
+{
+  "protocol": "https",
+  "host": "YOUR_DOMAIN",
+  "port": 443,
+  "hostPath": "/openhim-api",
+  "title": "NID OpenHIM",
+  "description": "NID Mapping Service - OpenHIM Instance"
+}
